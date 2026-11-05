@@ -15,7 +15,7 @@ select,button,input{font:inherit}select{width:100%;padding:10px;border:1px solid
 .progress{height:8px;background:#e7edf1;border-radius:20px;overflow:hidden;margin-top:7px}.progress span{display:block;height:100%;background:#2b8a63;width:0}
 .card h2{font-size:18px;color:var(--navy);margin:0 0 12px}.meaning{background:var(--pale);padding:12px;border-radius:9px;margin-bottom:16px}.meaning b{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .given{font-weight:700;color:var(--navy);font-size:19px;margin:10px 0}.answers{display:grid;gap:12px}.answer-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(130px,1.4fr);align-items:center;gap:12px}
-.hint{font-family:ui-monospace,monospace;color:var(--muted);letter-spacing:.08em;overflow-wrap:anywhere}.answer-row input{width:100%;padding:10px 11px;border:1px solid #cbd6de;border-radius:8px;min-width:0}
+.hint{font-family:ui-monospace,monospace;color:var(--muted);letter-spacing:.08em;overflow-wrap:anywhere}.answer-controls{display:flex;gap:7px;align-items:center;min-width:0}.answer-row input{width:100%;padding:10px 11px;border:1px solid #cbd6de;border-radius:8px;min-width:0}.audio-btn{flex:0 0 42px;padding:9px 10px;font-size:18px;line-height:1}
 .answer-row input.correct{border-color:var(--green);background:#effaf4}.answer-row input.wrong{border-color:var(--red);background:#fff3f2}
 .feedback{font-size:13px;margin-top:4px}.ok{color:var(--green)}.bad{color:var(--red)}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}button{border:0;border-radius:9px;padding:10px 14px;background:var(--blue);color:white;cursor:pointer;font-weight:600}button.secondary{background:#eaf0f4;color:#24465d}button:disabled{opacity:.45;cursor:not-allowed}
@@ -59,11 +59,26 @@ const DATA = [{"category": "Động từ (Verbs)", "terms": ["buy", "purchase", 
 const $ = id => document.getElementById(id);
 let pool = DATA.map((_,i)=>i), current = 0, entries = {}, checked = {};
 const norm = s => s.toLowerCase().trim().replace(/\s+/g,' ');
-function hint(term){
-  return term.split(/\s+/).map(word => {
-    const m = word.match(/^([A-Za-z0-9])/);
-    return m ? m[1] + '＿'.repeat(Math.max(2, word.length-1)) : word;
-  }).join(' ');
+function hint(term, typed=''){
+  // Keep the first letter of each word as a clue; typed letters fill slots live.
+  const entered = [...typed];
+  return [...term].map((ch, i, chars) => {
+    if (/\s/.test(ch)) return ch;
+    const isFirst = i === 0 || /\s/.test(chars[i-1]);
+    if (isFirst) return ch;
+    return entered[i] && !/\s/.test(entered[i]) ? entered[i] : '＿';
+  }).join('');
+}
+function speak(term){
+  if (!('speechSynthesis' in window)) {
+    $('message').textContent = 'Trình duyệt này chưa hỗ trợ phát âm.';
+    return;
+  }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(term);
+  utterance.lang = 'en-US';
+  utterance.rate = 0.85;
+  window.speechSynthesis.speak(utterance);
 }
 function populateCategories(){
   [...new Set(DATA.map(x=>x.category))].forEach(cat=>{
@@ -92,14 +107,22 @@ function render(){
   $('answers').innerHTML='';
   item.terms.slice(1).forEach((term,j)=>{
     const row=document.createElement('div');row.className='answer-row';
-    const h=document.createElement('div');h.className='hint';h.textContent=hint(term);
+    const h=document.createElement('div');h.className='hint';h.textContent=hint(term,(entries[k]||[])[j]||'');
     const wrap=document.createElement('div');
+    const controls=document.createElement('div');controls.className='answer-controls';
     const input=document.createElement('input');input.type='text';input.autocomplete='off';input.spellcheck=false;
     input.placeholder=`Từ/cụm từ ${j+2}`;input.value=(entries[k]||[])[j]||'';
     input.setAttribute('aria-label',`Đáp án ${j+2}`);
-    input.addEventListener('input',()=>{if(!entries[k])entries[k]=[];entries[k][j]=input.value;input.classList.remove('correct','wrong');checked[k]=false;$('message').textContent='';updateStats();});
+    input.addEventListener('input',()=>{
+      if(!entries[k])entries[k]=[];
+      entries[k][j]=input.value;h.textContent=hint(term,input.value);
+      input.classList.remove('correct','wrong');checked[k]=false;$('message').textContent='';updateStats();
+    });
+    const audio=document.createElement('button');audio.type='button';audio.className='audio-btn secondary';
+    audio.title='Nghe phát âm';audio.setAttribute('aria-label','Nghe phát âm '+term);audio.textContent='🔊';
+    audio.addEventListener('click',()=>speak(term));
     if(checked[k]){const ok=norm(input.value)===norm(term);input.classList.add(ok?'correct':'wrong');}
-    wrap.appendChild(input);row.append(h,wrap);$('answers').appendChild(row);
+    controls.append(input,audio);wrap.appendChild(controls);row.append(h,wrap);$('answers').appendChild(row);
   });
   $('message').textContent=checked[k]?'Đã kiểm tra câu này. Ô xanh là đúng, ô đỏ cần sửa.':'';
   $('answered').textContent=checked[k]?'Đã kiểm tra':'Chưa làm câu này';
